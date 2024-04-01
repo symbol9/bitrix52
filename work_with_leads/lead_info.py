@@ -1,7 +1,3 @@
-webhook_url = 'https://b24-6v5j8c.bitrix24.ru/rest/1/dq0qu52knpxu26rn/crm.lead.add.json'
-webhook_url2 = "https://b24-5ui6b2.bitrix24.ru/rest/1/7byl8jii47a6pdbb/crm.lead.add.json"
-
-
 def lead_data_func(name, phone_number, email, comment):
     lead_data = {
         'fields': {

@@ -13,7 +13,6 @@ from config.config import load_config
 from keyboards.keyboards import (phone_kb, fill_form_kb, cancel_btn_kb)
 from lexicon.lexicon import LEXICON
 from work_with_leads.add_lead import create_lead
-from work_with_leads.lead_info import webhook_url
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +21,9 @@ config = load_config()
 redis = Redis(host='localhost')
 
 storage = RedisStorage(redis=redis)
+
+webhook_url = config.webhooks.webhook
+webhook_url2 = config.webhooks.webhook2
 
 
 async def lead_data_f(redis):
@@ -76,13 +78,26 @@ class FSMFillForm(StatesGroup):
 
 
 @router.message(CommandStart(), StateFilter(default_state))
-async def start_command(message: Message, state: FSMContext):
-    await message.answer(text=f'Привет, {message.from_user.first_name}!\n\n'
-                              f'Для заполнения анкеты нажми на появившуюся кнопку',
-                         reply_markup=fill_form_kb())
-    await message.answer('Если клавиатура не открылась - действуйте по инструкции ниже')
-    photo = 'https://avatars.mds.yandex.net/get-images-cbir/2203007/cROjPWcVCuSiB56otJBaig936/ocr'
-    await bot.send_photo(chat_id=message.from_user.id, photo=photo)
+async def start_command(message: Message):
+    user_id = message.from_user.id
+
+    with open('ids.txt', 'r+') as file:
+        existing_ids = file.read().splitlines()
+        if str(user_id) not in existing_ids:
+            await message.answer(text=f'Привет, {message.from_user.first_name}!\n\n'
+                                      f'Я - Нейросетевой бот компании Stroika и я'
+                                      f' помогу тебе узнать об услугах нашей компании!\n'
+                                      f'Когда будете готовы к приобретению ***,'
+                                      f' можете заполнить анкету и обратиться к нам за более подробной консультацией,',
+                                 reply_markup=fill_form_kb())
+            await message.answer('Если клавиатура не открылась - действуйте по инструкции ниже')
+            photo = 'https://avatars.mds.yandex.net/get-images-cbir/2203007/cROjPWcVCuSiB56otJBaig936/ocr'
+            await bot.send_photo(chat_id=message.from_user.id, photo=photo)
+
+        else:
+            await message.answer(f"Привет, {message.from_user.first_name}!\n\n"
+                                 f"Я твой нейросетевой помощник, спрашивай все что захочешь о нашей компании,"
+                                 f" я постараюсь оответить!")
 
 
 @router.message(F.text == 'Заполнить анкету📝', StateFilter(default_state))
@@ -146,15 +161,20 @@ async def filling_mail_error(message: Message):
 
 @router.message(StateFilter(FSMFillForm.fill_message))
 async def process_message(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    with open('ids.txt', 'r+') as file:
+        file.write(f'{str(user_id)}\n')
+
     await redis.set('lead_message', message.text)
     data = await lead_data_f(redis)
     new_data = convert_bytes_to_str(data)
-    print(new_data)
+    logger.info(msg=new_data)
 
     # Вызываем функцию для создания лида (нужно определить функцию create_lead)
     await create_lead(webhook_url, new_data)
     # Очищаем данные из Redis
     await redis.delete('lead_name', 'lead_phone_number', 'lead_email', 'lead_message')
     await state.clear()
-    await message.answer("Спасибо, ваша заявка принята!")
-
+    await message.answer("Спасибо, ваша заявка принята!\n\n"
+                         "На указаный вами номер будет отправлено сообщение с чатом для дальнейшей консультации,"
+                         "либо просто перейдите по ссылке @Openai_stroika_bot")
